@@ -21,20 +21,25 @@ use core::str;
 use rand::seq::SliceRandom;
 use serde_derive::{Deserialize,Serialize};
 use ethereum_private_key_to_address::PrivateKey;
-use chrono::{Duration, Utc};
+use chrono::{ Utc};
 
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use reqwest::Client;
 
 use web3::{
     ethabi::{ethereum_types::U256,Function, ParamType, Param, StateMutability, Token},
-    types::{Address,Bytes, TransactionParameters}, signing::keccak256, 
+    types::{Address,Bytes, TransactionParameters, TransactionRequest}, signing::keccak256,
 };
 
-use web3::types::BlockNumber::{Latest,Pending};
+use tokio::time::sleep;
 
+use web3::types::BlockNumber::{Latest,Pending};
 use lazy_static::lazy_static;
+
+const MAX_RETRIES: u32 = 5;
+const GAS_PRICE_INCREMENT_PERCENTAGE: u32 = 20; // Increase gas price by 20% on each retry
+const GAS_INCREMENT_PERCENTAGE: u32 = 20; // Increase gas by 20% on each retry
 
 lazy_static! {
     pub static ref PRIV_KEY: tokio::sync::Mutex<String> = {      //priv_key
@@ -206,34 +211,54 @@ pub async fn submit_task(
     let private_key = PrivateKey::from_str(key.as_str()).unwrap();
     let addr = private_key.address();
 
-    let tx_object = TransactionParameters {
-        to: Some(contract_address),
-        gas_price:Some(gas_price().await), 
-        gas:U256::from_dec_str(GAS_UPPER).unwrap(),
-        nonce:Some(get_nonce(Address::from_str(addr.as_str()).unwrap()).await),
-        data:Bytes(tx_data),
-        ..Default::default()
-    };
-        //send tx to network
+    let mut attempts = 0;
+    let mut gas_price = gas_price().await;
+    let mut gas_limit = U256::from_dec_str(GAS_UPPER).unwrap();
+
+    //send tx to network
     loop {
+        let nonce = get_nonce(Address::from_str(addr.as_str()).unwrap()).await;
+        let tx_object = TransactionParameters {
+            to: Some(contract_address),
+            gas_price:Some(gas_price),
+            gas:gas_limit,
+            nonce:Some(nonce),
+            data:Bytes(tx_data.clone()),
+            ..Default::default()
+        };
+
         let signed = match web3.accounts().sign_transaction(tx_object.clone(), &prvk).await {
-            Ok(r) => {
-                r
-            },
-            Err(_) => {
-                continue
+            Ok(signed_tx) => signed_tx,
+            Err(e) => {
+                attempts += 1;
+                if attempts >= MAX_RETRIES {
+                    return Err(format!("Failed to sign transaction: {}", e));
+                }
+                sleep(Duration::from_secs(2u64.pow(attempts))).await;
+                continue;
             }
         };
 
-        let result = match web3.eth().send_raw_transaction(signed.raw_transaction).await{
-            Ok(r )=> r,
-            Err(e) => {
-                return Ok(e.to_string())
+        match web3.eth().send_raw_transaction(signed.raw_transaction).await {
+            Ok(tx_hash) => {
+                info!("invoke a tx hash is : {:?}",tx_hash);
+                return Ok(hex::encode(tx_hash.as_bytes()));
             },
-        };
-            
-        info!("invoke a tx hash is : {:?}",result);
-        return Ok(hex::encode(result.as_bytes()))
+            Err(e) => {
+                if e.to_string().contains("replacement transaction underpriced") {
+                    gas_price = gas_price * (100 + GAS_PRICE_INCREMENT_PERCENTAGE) / 100;
+                } else {
+                    // Handle other errors or add a general error increment
+                    gas_limit = gas_limit * (100 + GAS_INCREMENT_PERCENTAGE) / 100;
+                }
+            }
+        }
+
+        attempts += 1;
+        if attempts >= MAX_RETRIES {
+            return Err("Transaction failed after maximum number of retries".to_string());
+        }
+        sleep(Duration::from_secs(2u64.pow(attempts))).await;
     }
 }
 
@@ -346,10 +371,6 @@ pub async fn process_task_data(task:String){        //submit the task
 
 pub fn test() {
     println!("{}",Utc::now().timestamp());
-    let dt = (Utc::now() + Duration::seconds(100)).timestamp();
+    let dt = (Utc::now() + chrono::Duration::from_std(Duration::from_secs(100)).unwrap()).timestamp();
     println!("today date + 137 days {}", dt);
 }
-
-
-  
-  

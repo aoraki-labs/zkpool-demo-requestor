@@ -31,7 +31,7 @@ mod app_marco;
 
 pub async fn process_task_data() {
     loop{
-        thread::sleep(time::Duration::from_millis(500));
+        thread::sleep(time::Duration::from_millis(100));
         debug!("start to process task data");
         match loop_task_data().await{
             Ok(()) => (),

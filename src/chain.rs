@@ -21,9 +21,9 @@ use core::str;
 use rand::seq::SliceRandom;
 use serde_derive::{Deserialize,Serialize};
 use ethereum_private_key_to_address::PrivateKey;
-use chrono::{ Utc};
+use chrono::{Utc};
 
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use reqwest::Client;
 
@@ -32,7 +32,7 @@ use web3::{
     types::{Address,Bytes, TransactionParameters, TransactionRequest}, signing::keccak256,
 };
 
-use tokio::time::sleep;
+use tokio::time::{self,Duration};
 
 use web3::types::BlockNumber::{Latest,Pending};
 use lazy_static::lazy_static;
@@ -69,9 +69,15 @@ pub const  GAS_UPPER : &str = "1000000";
 
 
 //Dummy task info
-const REWARD_TOKEN:&str="0xfDfd239c9dD30445d0e080Ecf055A5cc53456A72";
+// Dev env
+//const REWARD_TOKEN:&str="0xfDfd239c9dD30445d0e080Ecf055A5cc53456A72";
+// Prod env
+const REWARD_TOKEN:&str="0x0622118429C54577eF34229526661c41020048bF";
 const REWARD:u64 = 100;
-const LIABILITY_TOKEN:&str="0xfDfd239c9dD30445d0e080Ecf055A5cc53456A72";
+// Dev env
+//const LIABILITY_TOKEN:&str="0xfDfd239c9dD30445d0e080Ecf055A5cc53456A72";
+// Prod env
+const LIABILITY_TOKEN:&str="0x0622118429C54577eF34229526661c41020048bF";
 const LIABILITY:u64 = 100;
 const LIABILITY_WINDOW:u64=36000;
 
@@ -234,7 +240,7 @@ pub async fn submit_task(
                 if attempts >= MAX_RETRIES {
                     return Err(format!("Failed to sign transaction: {}", e));
                 }
-                sleep(Duration::from_secs(2u64.pow(attempts))).await;
+                time::sleep(Duration::from_secs(2u64.pow(attempts))).await;
                 continue;
             }
         };
@@ -258,7 +264,7 @@ pub async fn submit_task(
         if attempts >= MAX_RETRIES {
             return Err("Transaction failed after maximum number of retries".to_string());
         }
-        sleep(Duration::from_secs(2u64.pow(attempts))).await;
+        time::sleep(Duration::from_secs(2u64.pow(attempts))).await;
     }
 }
 
@@ -362,8 +368,8 @@ pub async fn assign_task(instance:String)  -> Result<(), String> {  //TBD
 pub async fn process_task_data(task:String){        //submit the task
     match assign_task(task.clone()).await{
         Ok(()) => (),
-        Err(_) => {
-            error!("assign the task:{} failed",task)
+        Err(r) => {
+            error!("assign the task:{} failed {}",task, r)
         }
     }
 }

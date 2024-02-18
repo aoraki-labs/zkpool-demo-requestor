@@ -14,7 +14,8 @@
 // You should have received a copy of the GNU General Public License
 // along with the aoraki-labs library. If not, see <https://www.gnu.org/licenses/>.
 
-use std::{thread, time};
+use std::{thread};
+use tokio::time::{self, Duration};
 
 use chain::dummy_task;
 use log::*;
@@ -29,10 +30,15 @@ use crate::{server::start_rpc_server, chain::{PRIV_KEY, RELAYER_URL, CONTRACT}};
 #[macro_use]
 mod app_marco;
 
-pub async fn process_task_data() {
+use std::time::{Instant};
+
+pub async fn main_process_task_data() {
+    std::panic::set_hook(Box::new(|panic_info| {
+        error!("Panic occurred: {:?}", panic_info);
+    }));
+
     loop{
-        thread::sleep(time::Duration::from_millis(100));
-        debug!("start to process task data");
+        time::sleep(Duration::from_secs(1)).await;
         match loop_task_data().await{
             Ok(()) => (),
             Err(_) => {
@@ -44,8 +50,7 @@ pub async fn process_task_data() {
 
 pub async fn dummy_task_loop(interval:u64) { //dummy onchain task in interval seconds period
     loop{
-        thread::sleep(time::Duration::from_secs(interval));
-        debug!("start to send dummy task");
+        time::sleep(Duration::from_secs(interval)).await;
         let mut retry:usize = 0;
         loop{
             retry += 1;
@@ -89,21 +94,22 @@ async fn main() {
         *contract=contract_addr.clone();
 
     }
-    
-    let myserver = start_rpc_server(listen);
 
+    let my_server = start_rpc_server(listen);
     let srv_handle = tokio::spawn(async move {
-        myserver.await.wait();
+        my_server.await.wait();
     });
-
+    
     let process_task_handle = tokio::spawn(async move {
-        process_task_data().await
+        main_process_task_data().await
     });
 
     let dummy_task_handle = tokio::spawn(async move {
         dummy_task_loop(interval.parse::<u64>().unwrap()).await
     });
 
+
+ 
     tokio::select! {
       _ = async { srv_handle.await } => {
         info!("server terminal")
@@ -115,5 +121,4 @@ async fn main() {
         info!("dummy task handle terminal")
        },
     }
-
 }

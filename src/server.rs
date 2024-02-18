@@ -53,7 +53,6 @@ pub async fn start_rpc_server(addr:String) -> jsonrpc_http_server::Server {
         Ok(Value::String(result))
         
     });
-
     io.add_method("Test", |params: Params| async { //just for test
         let _: Vec<Value> = match params.parse(){
             Ok(r) => r,
@@ -76,7 +75,7 @@ pub async fn start_rpc_server(addr:String) -> jsonrpc_http_server::Server {
 }
 
 pub async fn receive_task(task:String){
-    info!("receive one task data is {:?}",task);
+    info!("receive one new task data is {:?}",task);
     let mut queue = TASK_MSG_QUEUE.lock().await;
     queue.push_back(task);
 }
